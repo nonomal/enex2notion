@@ -4,25 +4,30 @@ import pytest
 from requests import HTTPError
 
 from enex2notion.cli import cli
-from enex2notion.enex_uploader import BadTokenException, NoteUploadFailException
+from enex2notion.utils_exceptions import BadTokenException, NoteUploadFailException
+from enex2notion.utils_static import Rules
 
 
 @pytest.fixture()
 def mock_api(mocker):
     return {
-        "get_import_root": mocker.patch("enex2notion.cli.get_import_root"),
-        "get_notion_client": mocker.patch("enex2notion.cli.get_notion_client"),
-        "get_notebook_database": mocker.patch("enex2notion.cli.get_notebook_database"),
-        "get_notebook_page": mocker.patch("enex2notion.cli.get_notebook_page"),
-        "upload_note": mocker.patch("enex2notion.cli.upload_note"),
-        "parse_note": mocker.patch("enex2notion.cli.parse_note"),
+        "get_import_root": mocker.patch("enex2notion.cli_notion.get_import_root"),
+        "get_notion_client": mocker.patch("enex2notion.cli_notion.get_notion_client"),
+        "get_notebook_database": mocker.patch(
+            "enex2notion.cli_upload.get_notebook_database"
+        ),
+        "get_notebook_page": mocker.patch("enex2notion.cli_upload.get_notebook_page"),
+        "upload_note": mocker.patch("enex2notion.cli_upload.upload_note"),
+        "parse_note": mocker.patch("enex2notion.cli_upload.parse_note"),
     }
 
 
 @pytest.fixture()
 def fake_note_factory(mocker):
-    mock_iter = mocker.patch("enex2notion.cli.iter_notes")
+    mock_count = mocker.patch("enex2notion.cli_upload.count_notes")
+    mock_iter = mocker.patch("enex2notion.cli_upload.iter_notes")
     mock_iter.return_value = [mocker.MagicMock(note_hash="fake_hash", is_webclip=False)]
+    mock_count.side_effect = lambda x: len(mock_iter.return_value)
 
     return mock_iter
 
@@ -52,7 +57,7 @@ def test_empty_dir(mock_api, fake_note_factory, fs):
 
 def test_verbose(mock_api, fake_note_factory, mocker):
     fake_logs = {}
-    mock_logger = mocker.patch("enex2notion.cli.logging")
+    mock_logger = mocker.patch("enex2notion.cli_logging.logging")
     mock_logger.getLogger = lambda name: fake_logs.setdefault(name, mocker.MagicMock())
 
     cli(["--verbose", "fake.enex"])
@@ -63,7 +68,7 @@ def test_verbose(mock_api, fake_note_factory, mocker):
 
 def test_no_verbose(mock_api, fake_note_factory, mocker):
     fake_logs = {}
-    mock_logger = mocker.patch("enex2notion.cli.logging")
+    mock_logger = mocker.patch("enex2notion.cli_logging.logging")
     mock_logger.getLogger = lambda name: fake_logs.setdefault(name, mocker.MagicMock())
 
     cli(["fake.enex"])
@@ -96,6 +101,40 @@ def test_upload_fail_retry(mock_api, fake_note_factory, mocker, caplog):
     assert "Failed to upload note" in caplog.text
 
 
+def test_upload_fail_retry_custom(mock_api, fake_note_factory, mocker, caplog):
+    retries = 10
+
+    mock_api["upload_note"].side_effect = [NoteUploadFailException] * (retries * 2)
+
+    with caplog.at_level(logging.ERROR, logger="enex2notion"):
+        with pytest.raises(NoteUploadFailException):
+            cli(
+                [
+                    "--token",
+                    "fake_token",
+                    "--retry",
+                    str(retries),
+                    "fake.enex",
+                ]
+            )
+
+    assert mock_api["upload_note"].call_count == retries
+    assert "Failed to upload note" in caplog.text
+
+
+def test_upload_fail_retry_infinite(mock_api, fake_note_factory, mocker, caplog):
+    retries = 0
+    exceptions = [NoteUploadFailException] * 10
+
+    mock_api["upload_note"].side_effect = exceptions + [None]
+
+    with caplog.at_level(logging.WARNING, logger="enex2notion"):
+        cli(["--token", "fake_token", "--retry", str(retries), "fake.enex"])
+
+    assert mock_api["upload_note"].call_count == len(exceptions) + 1
+    assert "Failed to upload note" in caplog.text
+
+
 def test_upload_fail(mock_api, fake_note_factory, mocker, caplog):
     mock_api["upload_note"].side_effect = [NoteUploadFailException] * 5
 
@@ -103,17 +142,55 @@ def test_upload_fail(mock_api, fake_note_factory, mocker, caplog):
         cli(["--token", "fake_token", "fake.enex"])
 
 
-def test_add_meta(mock_api, fake_note_factory, mocker):
+def test_upload_skip(mock_api, fake_note_factory, mocker, caplog):
+    mock_api["upload_note"].side_effect = [NoteUploadFailException] * 5
+
+    with caplog.at_level(logging.ERROR, logger="enex2notion"):
+        cli(["--token", "fake_token", "--skip-failed", "fake.enex"])
+
+    assert mock_api["upload_note"].call_count == 5
+    assert "Failed to upload note" in caplog.text
+
+
+def test_upload_notebook_fail(mock_api, fake_note_factory, mocker, caplog):
+    mock_api["get_notebook_database"].side_effect = [NoteUploadFailException] * 5
+
+    with pytest.raises(NoteUploadFailException):
+        cli(["--token", "fake_token", "fake.enex"])
+
+
+def test_upload_notebook_skip(mock_api, fake_note_factory, mocker, caplog):
+    mock_api["get_notebook_database"].side_effect = [NoteUploadFailException] * 5
+
+    with caplog.at_level(logging.ERROR, logger="enex2notion"):
+        cli(["--token", "fake_token", "--skip-failed", "fake.enex"])
+
+    assert mock_api["get_notebook_database"].call_count == 5
+    assert "Failed to get notebook root for" in caplog.text
+
+
+def test_no_keep_failed(mock_api, fake_note_factory, mocker):
+    cli(["--token", "fake_token", "fake.enex"])
+
+    mock_api["upload_note"].assert_called_once_with(
+        mocker.ANY, mocker.ANY, mocker.ANY, False
+    )
+
+
+def test_keep_failed(mock_api, fake_note_factory, mocker):
+    cli(["--token", "fake_token", "--keep-failed", "fake.enex"])
+
+    mock_api["upload_note"].assert_called_once_with(
+        mocker.ANY, mocker.ANY, mocker.ANY, True
+    )
+
+
+def test_add_meta(mock_api, fake_note_factory, mocker, parse_rules):
     cli(["--add-meta", "fake.enex"])
 
-    mock_api["parse_note"].assert_called_once_with(
-        mocker.ANY,
-        mode_webclips="TXT",
-        is_add_meta=True,
-        is_add_pdf_preview=False,
-        is_condense_lines=False,
-        is_condense_lines_sparse=False,
-    )
+    parse_rules.add_meta = True
+
+    mock_api["parse_note"].assert_called_once_with(mocker.ANY, parse_rules)
 
 
 def test_skip_dupe(mock_api, fake_note_factory, mocker):
@@ -173,24 +250,17 @@ def test_bad_file(mock_api, fake_note_factory):
     mock_api["parse_note"].assert_called_once()
 
 
-def test_webclip(mock_api, fake_note_factory, mocker):
+def test_webclip(mock_api, fake_note_factory, mocker, parse_rules):
     fake_note_factory.return_value = [
         mocker.MagicMock(note_hash="fake_hash1", is_webclip=True),
     ]
 
     cli(["fake.enex"])
 
-    mock_api["parse_note"].assert_called_once_with(
-        mocker.ANY,
-        mode_webclips="TXT",
-        is_add_meta=False,
-        is_add_pdf_preview=False,
-        is_condense_lines=False,
-        is_condense_lines_sparse=False,
-    )
+    mock_api["parse_note"].assert_called_once_with(mocker.ANY, parse_rules)
 
 
-def test_webclip_pdf(mock_api, fake_note_factory, mocker):
+def test_webclip_pdf(mock_api, fake_note_factory, mocker, parse_rules):
     fake_note_factory.return_value = [
         mocker.MagicMock(note_hash="fake_hash1", is_webclip=True),
     ]
@@ -199,17 +269,12 @@ def test_webclip_pdf(mock_api, fake_note_factory, mocker):
 
     cli(["--mode-webclips", "PDF", "fake.enex"])
 
-    mock_api["parse_note"].assert_called_once_with(
-        mocker.ANY,
-        mode_webclips="PDF",
-        is_add_meta=False,
-        is_add_pdf_preview=False,
-        is_condense_lines=False,
-        is_condense_lines_sparse=False,
-    )
+    parse_rules.mode_webclips = "PDF"
+
+    mock_api["parse_note"].assert_called_once_with(mocker.ANY, parse_rules)
 
 
-def test_webclip_pdf_with_preview(mock_api, fake_note_factory, mocker):
+def test_webclip_pdf_with_preview(mock_api, fake_note_factory, mocker, parse_rules):
     fake_note_factory.return_value = [
         mocker.MagicMock(note_hash="fake_hash1", is_webclip=True),
     ]
@@ -218,26 +283,20 @@ def test_webclip_pdf_with_preview(mock_api, fake_note_factory, mocker):
 
     cli(["--mode-webclips", "PDF", "--add-pdf-preview", "fake.enex"])
 
-    mock_api["parse_note"].assert_called_once_with(
-        mocker.ANY,
-        mode_webclips="PDF",
-        is_add_meta=False,
-        is_add_pdf_preview=True,
-        is_condense_lines=False,
-        is_condense_lines_sparse=False,
-    )
+    parse_rules.mode_webclips = "PDF"
+    parse_rules.add_pdf_preview = True
+
+    mock_api["parse_note"].assert_called_once_with(mocker.ANY, parse_rules)
 
 
-def test_unhandled_exception(mock_api, fake_note_factory, caplog):
+def test_parse_exception(mock_api, fake_note_factory, caplog):
     fake_exception = Exception("fake")
     mock_api["parse_note"].side_effect = fake_exception
 
     with caplog.at_level(logging.ERROR, logger="enex2notion"):
-        with pytest.raises(Exception) as e:
-            cli(["fake.enex"])
+        cli(["fake.enex"])
 
-    assert e.value == fake_exception
-    assert "Unhandled exception while parsing note" in caplog.text
+    assert "Failed to parse note" in caplog.text
 
 
 def test_file_log(mock_api, fake_note_factory, fs):

@@ -1,3 +1,118 @@
+## [0.3.1](https://github.com/vzhd1701/enex2notion/compare/v0.3.0...v0.3.1) (2023-10-27)
+
+### Bug Fixes
+
+- fix parse errors for huge and empty nodes ([#102](https://github.com/vzhd1701/enex2notion/issues/102)) ([0520e93](https://github.com/vzhd1701/enex2notion/commit/0520e93141297996977fbc7ea235e60291ea367f)), closes [#101](https://github.com/vzhd1701/enex2notion/issues/101)
+- improve handling notes with empty content ([87593b2](https://github.com/vzhd1701/enex2notion/commit/87593b2bdeba2096d302d325cf4a3a1c48754cc4))
+
+## [0.3.0](https://github.com/vzhd1701/enex2notion/compare/v0.2.27...v0.3.0) (2023-10-19)
+
+### Features
+
+- add --retry, --skip-failed and --keep-failed options ([7f3969b](https://github.com/vzhd1701/enex2notion/commit/7f3969b2751d22a97522484a86cafa8485416d3d))
+
+### Bug Fixes
+
+- avoid parsing crashes by using lxml ([26d9b8a](https://github.com/vzhd1701/enex2notion/commit/26d9b8a415205959b0452b40040051968b91468f))
+- convert bad img src quotes when parsing weblicp ([080d7e3](https://github.com/vzhd1701/enex2notion/commit/080d7e385589cf330e6747d52a693efdf579ca5e)), closes [#79](https://github.com/vzhd1701/enex2notion/issues/79)
+
+### [0.2.27](https://github.com/vzhd1701/enex2notion/compare/v0.2.26...v0.2.27) (2023-10-17)
+
+### Bug Fixes
+
+- fix upload result URL parser ([2c35356](https://github.com/vzhd1701/enex2notion/commit/2c353566e6da8306f9c409d84b14f2619e67c003)), closes [#100](https://github.com/vzhd1701/enex2notion/issues/100) [#99](https://github.com/vzhd1701/enex2notion/issues/99)
+- use plaintext when setting note title ([0be6f7d](https://github.com/vzhd1701/enex2notion/commit/0be6f7dc8568188fdd1dca752b98a1f147ef32de)), closes [#95](https://github.com/vzhd1701/enex2notion/issues/95)
+
+### [0.2.26](https://github.com/vzhd1701/enex2notion/compare/v0.2.25...v0.2.26) (2023-05-06)
+
+### Bug Fixes
+
+- update dependencies to prevent 403 error ([78d9339](https://github.com/vzhd1701/enex2notion/commit/78d93398d5052c5a29125f9f5c246705ff7464da))
+- update Notion SDK ([d688a95](https://github.com/vzhd1701/enex2notion/commit/d688a95e092dbe5b64214dabe79e53c3ad10c593))
+
+### [0.2.25](https://github.com/vzhd1701/enex2notion/compare/v0.2.24...v0.2.25) (2022-12-06)
+
+### Bug Fixes
+
+- update notion SDK ([3e46fda](https://github.com/vzhd1701/enex2notion/commit/3e46fda66c416d720d7c3e09efb5496c70fd2bb7))
+
+### [0.2.24](https://github.com/vzhd1701/enex2notion/compare/v0.2.23...v0.2.24) (2022-10-18)
+
+### Bug Fixes
+
+- improve yinxiang markdown block filtering ([497940b](https://github.com/vzhd1701/enex2notion/commit/497940b01a1a47fd2241550960ceda851eedd9af))
+
+### [0.2.23](https://github.com/vzhd1701/enex2notion/compare/v0.2.22...v0.2.23) (2022-10-15)
+
+### Bug Fixes
+
+- skip Yinxiang hidden markdown appendix ([aa5989e](https://github.com/vzhd1701/enex2notion/commit/aa5989eb4b7d15da78d1460a3f394304d40072df))
+
+### [0.2.22](https://github.com/vzhd1701/enex2notion/compare/v0.2.21...v0.2.22) (2022-10-12)
+
+### Bug Fixes
+
+- parse media ignoring hash case ([b1744ce](https://github.com/vzhd1701/enex2notion/commit/b1744ced7c5134efab93f56cfea195fe6fedde70)), closes [#53](https://github.com/vzhd1701/enex2notion/issues/53)
+
+### [0.2.21](https://github.com/vzhd1701/enex2notion/compare/v0.2.20...v0.2.21) (2022-09-24)
+
+### Bug Fixes
+
+- add xpi to banned extensions ([a75b566](https://github.com/vzhd1701/enex2notion/commit/a75b566fd3578a06848f7e3c80bde2282a359a0b))
+
+### [0.2.20](https://github.com/vzhd1701/enex2notion/compare/v0.2.19...v0.2.20) (2022-09-24)
+
+### Bug Fixes
+
+- add more banned extensions ([6a8c614](https://github.com/vzhd1701/enex2notion/commit/6a8c614c221b12dcc910af20e8138837eaea13ea))
+- upload attachments with banned extensions as .bin files ([79e0be5](https://github.com/vzhd1701/enex2notion/commit/79e0be598c5c046ebe2e5b29b563cfd274977572))
+
+### [0.2.19](https://github.com/vzhd1701/enex2notion/compare/v0.2.18...v0.2.19) (2022-09-22)
+
+### Bug Fixes
+
+- ignore jar file attachments ([ce066cc](https://github.com/vzhd1701/enex2notion/commit/ce066cceae72e8f27d8ed066e898680e65fb6020)), closes [#50](https://github.com/vzhd1701/enex2notion/issues/50)
+
+### [0.2.18](https://github.com/vzhd1701/enex2notion/compare/v0.2.17...v0.2.18) (2022-08-20)
+
+### Bug Fixes
+
+- fix crash for notes with empty resource ([844e95c](https://github.com/vzhd1701/enex2notion/commit/844e95c14fa77bdb37bf87f3b4459adb752ed63a)), closes [#48](https://github.com/vzhd1701/enex2notion/issues/48)
+
+### [0.2.17](https://github.com/vzhd1701/enex2notion/compare/v0.2.16...v0.2.17) (2022-07-28)
+
+### Bug Fixes
+
+- update notion SDK to avoid rate limit errors ([c5458da](https://github.com/vzhd1701/enex2notion/commit/c5458da992d3d74d59d7696dd060772bf82e298e))
+
+### [0.2.16](https://github.com/vzhd1701/enex2notion/compare/v0.2.15...v0.2.16) (2022-06-19)
+
+### Bug Fixes
+
+- update PyMuPDF version ([88f3213](https://github.com/vzhd1701/enex2notion/commit/88f32138771e8347a3f216ae30c1fbe9a7531800))
+
+### [0.2.15](https://github.com/vzhd1701/enex2notion/compare/v0.2.14...v0.2.15) (2022-06-14)
+
+### Bug Fixes
+
+- skip bad data uri images on parsing ([2b6060a](https://github.com/vzhd1701/enex2notion/commit/2b6060a52bfcdd7d2d7404ee94098aa0e251f015)), closes [#36](https://github.com/vzhd1701/enex2notion/issues/36)
+- skip with an error instead of crashing when note parse failed ([e2cd4a7](https://github.com/vzhd1701/enex2notion/commit/e2cd4a755c91acdfa136fe58af33407b3b50cbcf))
+
+### [0.2.14](https://github.com/vzhd1701/enex2notion/compare/v0.2.13...v0.2.14) (2022-06-03)
+
+### Bug Fixes
+
+- avoid warning when uploading tables ([d0aa9ea](https://github.com/vzhd1701/enex2notion/commit/d0aa9ead85fb1c073169b05189edaa204fce277f))
+- log only warning messages from notion with --verbose flag ([9b74b15](https://github.com/vzhd1701/enex2notion/commit/9b74b159542b7b6d56987baa0d9cbb92d619c765))
+- prevent network error when uploading files ([c6bacc0](https://github.com/vzhd1701/enex2notion/commit/c6bacc0a9fb5c20f096785bace02b61894f285d9))
+
+### [0.2.13](https://github.com/vzhd1701/enex2notion/compare/v0.2.12...v0.2.13) (2022-05-25)
+
+### Bug Fixes
+
+- show better progress bar ([cb7699e](https://github.com/vzhd1701/enex2notion/commit/cb7699ee2da6493ff40260f1c8c2e0f847272ea1))
+- show processed notes count during upload ([0546956](https://github.com/vzhd1701/enex2notion/commit/05469560063be5635cf068ae2d747845977b6a63)), closes [#33](https://github.com/vzhd1701/enex2notion/issues/33)
+
 ### [0.2.12](https://github.com/vzhd1701/enex2notion/compare/v0.2.11...v0.2.12) (2022-05-11)
 
 ### Bug Fixes

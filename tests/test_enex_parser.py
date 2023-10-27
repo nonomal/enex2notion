@@ -1,11 +1,23 @@
+import base64
 import datetime
 import logging
 from pathlib import Path
 
+import pytest
 from dateutil.tz import tzutc
 
-from enex2notion.enex_parser import iter_notes
+from enex2notion.enex_parser import count_notes, iter_notes
 from enex2notion.enex_types import EvernoteNote, EvernoteResource
+
+
+def test_iter_non_xml(fs):
+    test_enex = """this is not xml"""
+    fs.create_file("test.enex", contents=test_enex)
+
+    with pytest.raises(RuntimeError) as e:
+        list(iter_notes(Path("test.enex")))
+
+    assert "Failed to parse" in str(e.value)
 
 
 def test_iter_notes_single(fs):
@@ -32,6 +44,71 @@ def test_iter_notes_single(fs):
             created=datetime.datetime(2021, 11, 18, 8, 53, 32, tzinfo=tzutc()),
             updated=datetime.datetime(2021, 11, 18, 8, 59, 20, tzinfo=tzutc()),
             content="test",
+            tags=[],
+            author="",
+            url="",
+            is_webclip=False,
+            resources=[],
+        ),
+    ]
+
+
+def test_iter_notes_single_no_content(fs):
+    test_enex = """<?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE en-export SYSTEM "http://xml.evernote.com/pub/evernote-export4.dtd">
+    <en-export export-date="20211218T085932Z" application="Evernote" version="10.25.6">
+      <note>
+        <title>test1</title>
+        <created>20211118T085332Z</created>
+        <updated>20211118T085920Z</updated>
+        <note-attributes>
+        </note-attributes>
+      </note>
+    </en-export>
+    """
+    fs.create_file("test.enex", contents=test_enex)
+
+    notes = list(iter_notes(Path("test.enex")))
+
+    assert notes == [
+        EvernoteNote(
+            title="test1",
+            created=datetime.datetime(2021, 11, 18, 8, 53, 32, tzinfo=tzutc()),
+            updated=datetime.datetime(2021, 11, 18, 8, 59, 20, tzinfo=tzutc()),
+            content="",
+            tags=[],
+            author="",
+            url="",
+            is_webclip=False,
+            resources=[],
+        ),
+    ]
+
+
+def test_iter_notes_single_empty_content(fs):
+    test_enex = """<?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE en-export SYSTEM "http://xml.evernote.com/pub/evernote-export4.dtd">
+    <en-export export-date="20211218T085932Z" application="Evernote" version="10.25.6">
+      <note>
+        <title>test1</title>
+        <created>20211118T085332Z</created>
+        <updated>20211118T085920Z</updated>
+        <note-attributes>
+        </note-attributes>
+        <content></content>
+      </note>
+    </en-export>
+    """
+    fs.create_file("test.enex", contents=test_enex)
+
+    notes = list(iter_notes(Path("test.enex")))
+
+    assert notes == [
+        EvernoteNote(
+            title="test1",
+            created=datetime.datetime(2021, 11, 18, 8, 53, 32, tzinfo=tzutc()),
+            updated=datetime.datetime(2021, 11, 18, 8, 59, 20, tzinfo=tzutc()),
+            content="",
             tags=[],
             author="",
             url="",
@@ -232,6 +309,95 @@ def test_iter_notes_single_attrs(fs):
             resources=[],
         ),
     ]
+
+
+def test_iter_notes_bad_entities(fs, caplog):
+    test_enex = """<?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE en-export SYSTEM "http://xml.evernote.com/pub/evernote-export4.dtd">
+    <en-export export-date="20211218T085932Z" application="Evernote" version="10.25.6">
+      <note>
+        <title>&nbsp;test11 &nbsp;–test12</title>
+        <created>20211118T085332Z</created>
+        <updated>20211118T085920Z</updated>
+        <content>test1</content>
+      </note>
+      <note>
+        <title>test21 &nbsp;–test22</title>
+        <created>20211118T085332Z</created>
+        <updated>20211118T085920Z</updated>
+        <content>test2</content>
+      </note>
+    </en-export>
+    """
+    fs.create_file("test.enex", contents=test_enex, encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger="enex2notion"):
+        notes_count = count_notes(Path("test.enex"))
+
+    notes = list(iter_notes(Path("test.enex")))
+
+    assert notes_count == 2
+    assert notes == [
+        EvernoteNote(
+            title="&nbsp;test11 &nbsp;–test12",
+            created=datetime.datetime(2021, 11, 18, 8, 53, 32, tzinfo=tzutc()),
+            updated=datetime.datetime(2021, 11, 18, 8, 59, 20, tzinfo=tzutc()),
+            content="test1",
+            tags=[],
+            author="",
+            url="",
+            is_webclip=False,
+            resources=[],
+        ),
+        EvernoteNote(
+            title="test21 &nbsp;–test22",
+            created=datetime.datetime(2021, 11, 18, 8, 53, 32, tzinfo=tzutc()),
+            updated=datetime.datetime(2021, 11, 18, 8, 59, 20, tzinfo=tzutc()),
+            content="test2",
+            tags=[],
+            author="",
+            url="",
+            is_webclip=False,
+            resources=[],
+        ),
+    ]
+    assert "file parsed with errors" in caplog.text
+
+
+def test_iter_notes_bad_entities_no_unicode(fs, caplog):
+    test_enex = b"""<?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE en-export SYSTEM "http://xml.evernote.com/pub/evernote-export4.dtd">
+    <en-export export-date="20211218T085932Z" application="Evernote" version="10.25.6">
+      <note>
+        <title>&nbsp;test11 &nbsp;\x96test12</title>
+        <created>20211118T085332Z</created>
+        <updated>20211118T085920Z</updated>
+        <content>test1</content>
+      </note>
+    </en-export>
+    """
+    fs.create_file("test.enex", contents=test_enex)
+
+    with caplog.at_level(logging.WARNING, logger="enex2notion"):
+        notes_count = count_notes(Path("test.enex"))
+
+    notes = list(iter_notes(Path("test.enex")))
+
+    assert notes_count == 1
+    assert notes == [
+        EvernoteNote(
+            title="&nbsp;test11 &nbsp;test12",
+            created=datetime.datetime(2021, 11, 18, 8, 53, 32, tzinfo=tzutc()),
+            updated=datetime.datetime(2021, 11, 18, 8, 59, 20, tzinfo=tzutc()),
+            content="test1",
+            tags=[],
+            author="",
+            url="",
+            is_webclip=False,
+            resources=[],
+        )
+    ]
+    assert "file parsed with errors" in caplog.text
 
 
 def test_iter_notes_webclip1(fs):
@@ -444,6 +610,72 @@ def test_iter_notes_single_with_resource(fs):
         notes[0].resource_by_md5("bc32ed98d624acb4008f986349a20d26")
         == expected_resource
     )
+    assert notes[0].resource_by_md5("000") is None
+
+
+def test_iter_notes_single_with_huge_resource(fs, caplog):
+    test_enex_head = b"""<?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE en-export SYSTEM "http://xml.evernote.com/pub/evernote-export4.dtd">
+    <en-export export-date="20211218T085932Z" application="Evernote" version="10.25.6">
+      <note>
+        <title>test1</title>
+        <created>20211118T085332Z</created>
+        <updated>20211118T085920Z</updated>
+        <note-attributes>
+        </note-attributes>
+        <content>test</content>
+        <resource>
+          <data encoding="base64">
+    """
+    test_enex_tail = b"""
+          </data>
+          <mime>image/gif</mime>
+          <resource-attributes>
+            <file-name>smallest.gif</file-name>
+          </resource-attributes>
+        </resource>
+      </note>
+    </en-export>
+    """
+    test_enex_file = fs.create_file("test.enex", contents=test_enex_head)
+
+    # 10 MB
+    big_binary = b"\x00" * 10 * 1024 * 1024
+    big_binary_hash = "f1c9645dbc14efddc7d8a322685f26eb"
+
+    with Path("test.enex").open("ab+") as f:
+        f.write(base64.b64encode(big_binary))
+        f.write(test_enex_tail)
+
+    with caplog.at_level(logging.WARNING, logger="enex2notion"):
+        notes_count = count_notes(Path("test.enex"))
+
+    notes = list(iter_notes(Path("test.enex")))
+
+    expected_resource = EvernoteResource(
+        data_bin=big_binary,
+        size=len(big_binary),
+        md5=big_binary_hash,
+        mime="image/gif",
+        file_name="smallest.gif",
+    )
+
+    assert caplog.text == ""
+    assert notes_count == 1
+    assert notes == [
+        EvernoteNote(
+            title="test1",
+            created=datetime.datetime(2021, 11, 18, 8, 53, 32, tzinfo=tzutc()),
+            updated=datetime.datetime(2021, 11, 18, 8, 59, 20, tzinfo=tzutc()),
+            content="test",
+            tags=[],
+            author="",
+            url="",
+            is_webclip=False,
+            resources=[expected_resource],
+        ),
+    ]
+    assert notes[0].resource_by_md5(big_binary_hash) == expected_resource
     assert notes[0].resource_by_md5("000") is None
 
 
@@ -662,6 +894,111 @@ def test_iter_notes_single_with_empty_resource(fs, caplog):
     )
 
 
+def test_iter_notes_single_with_empty_resource_no_data(fs, caplog):
+    test_enex = """<?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE en-export SYSTEM "http://xml.evernote.com/pub/evernote-export4.dtd">
+    <en-export export-date="20211218T085932Z" application="Evernote" version="10.25.6">
+      <note>
+        <title>test1</title>
+        <created>20211118T085332Z</created>
+        <updated>20211118T085920Z</updated>
+        <note-attributes>
+        </note-attributes>
+        <content>test</content>
+        <resource>
+          <mime>image/gif</mime>
+          <resource-attributes>
+            <file-name>smallest.gif</file-name>
+          </resource-attributes>
+        </resource>
+      </note>
+    </en-export>
+    """
+    fs.create_file("test.enex", contents=test_enex)
+
+    with caplog.at_level(logging.DEBUG, logger="enex2notion"):
+        notes = list(iter_notes(Path("test.enex")))
+
+    expected_resource = EvernoteResource(
+        data_bin=b"",
+        size=0,
+        md5="d41d8cd98f00b204e9800998ecf8427e",
+        mime="image/gif",
+        file_name="smallest.gif",
+    )
+
+    assert "Empty resource" in caplog.text
+    assert notes == [
+        EvernoteNote(
+            title="test1",
+            created=datetime.datetime(2021, 11, 18, 8, 53, 32, tzinfo=tzutc()),
+            updated=datetime.datetime(2021, 11, 18, 8, 59, 20, tzinfo=tzutc()),
+            content="test",
+            tags=[],
+            author="",
+            url="",
+            is_webclip=False,
+            resources=[expected_resource],
+        ),
+    ]
+    assert (
+        notes[0].resource_by_md5("d41d8cd98f00b204e9800998ecf8427e")
+        == expected_resource
+    )
+
+
+def test_iter_notes_single_with_badext_resource(fs, caplog):
+    test_enex = """<?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE en-export SYSTEM "http://xml.evernote.com/pub/evernote-export4.dtd">
+    <en-export export-date="20211218T085932Z" application="Evernote" version="10.25.6">
+      <note>
+        <title>test1</title>
+        <created>20211118T085332Z</created>
+        <updated>20211118T085920Z</updated>
+        <note-attributes>
+        </note-attributes>
+        <content>test</content>
+        <resource>
+          <mime>application/x-msdownload</mime>
+          <resource-attributes>
+            <file-name>test.exe</file-name>
+          </resource-attributes>
+        </resource>
+      </note>
+    </en-export>
+    """
+    fs.create_file("test.enex", contents=test_enex)
+
+    with caplog.at_level(logging.WARNING, logger="enex2notion"):
+        notes = list(iter_notes(Path("test.enex")))
+
+    assert (
+        "'test.exe' attachment extension is banned, will be uploaded as 'test.exe.bin'"
+        in caplog.text
+    )
+    assert notes == [
+        EvernoteNote(
+            title="test1",
+            created=datetime.datetime(2021, 11, 18, 8, 53, 32, tzinfo=tzutc()),
+            updated=datetime.datetime(2021, 11, 18, 8, 59, 20, tzinfo=tzutc()),
+            content="test",
+            tags=[],
+            author="",
+            url="",
+            is_webclip=False,
+            resources=[
+                EvernoteResource(
+                    data_bin=b"",
+                    size=0,
+                    md5="d41d8cd98f00b204e9800998ecf8427e",
+                    mime="application/octet-stream",
+                    file_name="test.exe.bin",
+                )
+            ],
+        ),
+    ]
+
+
 def test_iter_notes_single_empty(fs, mocker):
     test_enex = """<?xml version="1.0" encoding="UTF-8"?>
     <!DOCTYPE en-export SYSTEM "http://xml.evernote.com/pub/evernote-export4.dtd">
@@ -691,3 +1028,40 @@ def test_iter_notes_single_empty(fs, mocker):
         resources=[],
         _note_hash="479b590db4f4d8817f93d01af51f21c894815920",
     )
+
+
+def test_count_notes(fs):
+    test_enex = """<?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE en-export SYSTEM "http://xml.evernote.com/pub/evernote-export4.dtd">
+    <en-export export-date="20211218T085932Z" application="Evernote" version="10.25.6">
+      <note></note>
+    </en-export>
+    """
+    fs.create_file("test.enex", contents=test_enex)
+
+    assert count_notes(Path("test.enex")) == 1
+
+
+def test_count_notes_none(fs):
+    test_enex = """<?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE en-export SYSTEM "http://xml.evernote.com/pub/evernote-export4.dtd">
+    <en-export export-date="20211218T085932Z" application="Evernote" version="10.25.6">
+    </en-export>
+    """
+    fs.create_file("test.enex", contents=test_enex)
+
+    assert count_notes(Path("test.enex")) == 0
+
+
+def test_count_notes_many(fs):
+    test_enex = """<?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE en-export SYSTEM "http://xml.evernote.com/pub/evernote-export4.dtd">
+    <en-export export-date="20211218T085932Z" application="Evernote" version="10.25.6">
+      <note></note>
+      <note></note>
+      <note></note>
+    </en-export>
+    """
+    fs.create_file("test.enex", contents=test_enex)
+
+    assert count_notes(Path("test.enex")) == 3

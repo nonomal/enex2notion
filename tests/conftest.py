@@ -13,6 +13,7 @@ from notion.block import PageBlock
 from notion.client import NotionClient
 
 from enex2notion.enex_types import EvernoteResource
+from enex2notion.utils_static import Rules
 
 
 @pytest.fixture(scope="module")
@@ -186,3 +187,18 @@ def parse_html():
         return BeautifulSoup(html, "html.parser")
 
     return inner
+
+
+@pytest.fixture()
+def parse_rules():
+    return Rules(
+        mode_webclips="TXT",
+        add_meta=False,
+        add_pdf_preview=False,
+        condense_lines=False,
+        condense_lines_sparse=False,
+        tag=None,
+        retry=5,
+        skip_failed=False,
+        keep_failed=False,
+    )

@@ -4,82 +4,58 @@ import logging
 import mimetypes
 import re
 import uuid
-from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from xml.etree import ElementTree
+from typing import Iterator
 
 from dateutil.parser import isoparse
 
+from enex2notion.enex_parser_xml import (
+    iter_process_xml_elements,
+    iter_xml_elements_as_dict,
+)
 from enex2notion.enex_types import EvernoteNote, EvernoteResource
 
 logger = logging.getLogger(__name__)
 
 
-def iter_notes(enex_file: Path):
-    with open(enex_file, "rb") as f:
-        context = ElementTree.iterparse(f, events=("start", "end"))
-
-        _, root = next(context)
-
-        for event, elem in context:
-            if event == "end" and elem.tag == "note":
-                yield _process_note(_etree_to_dict(elem)["note"])
-
-            root.clear()
+def count_notes(enex_file: Path) -> int:
+    return sum(
+        iter_process_xml_elements(enex_file, "note", lambda e: 1, _log_xml_errors)
+    )
 
 
-# https://stackoverflow.com/a/10077069/13100286
-def _etree_to_dict(t):  # noqa: WPS210, WPS231, C901
-    d = {t.tag: {} if t.attrib else None}
-    children = list(t)
-    if children:
-        dd = defaultdict(list)
-        for dc in map(_etree_to_dict, children):
-            for k, v in dc.items():
-                dd[k].append(v)
-        d = {
-            t.tag: {
-                k: v[0] if len(v) == 1 else v  # noqa: WPS441
-                for k, v in dd.items()  # noqa: WPS221
-            }
-        }
-    if t.attrib:
-        d[t.tag].update(
-            (f"@{k}", v) for k, v in t.attrib.items()  # noqa: WPS221, WPS441
-        )
-    if t.text:
-        text = t.text.strip()
-        if children or t.attrib:
-            if text:
-                d[t.tag]["#text"] = text
-        else:
-            d[t.tag] = text
-    return d
+def _log_xml_errors(xml_file: Path, errors):
+    logger.warning(f"'{xml_file.name}' file parsed with errors")
+    logger.debug("".join(errors))
 
 
-def _process_note(note_raw: dict):
+def iter_notes(enex_file: Path) -> Iterator[EvernoteNote]:
+    yield from (_process_note(e) for e in iter_xml_elements_as_dict(enex_file, "note"))
+
+
+def _process_note(note_raw: dict) -> EvernoteNote:
     if not note_raw:
         note_raw = {}
 
-    note_attrs = note_raw.get("note-attributes") or {}
+    note_raw["note-attributes"] = note_raw.get("note-attributes") or {}
 
-    note_tags = note_raw.get("tag", [])
+    note_tags = note_raw.get("tag") or []
     if isinstance(note_tags, str):
         note_tags = [note_tags]
 
     now = datetime.now()
-    date_created = isoparse(note_raw.get("created", now.isoformat()))
-    date_updated = isoparse(note_raw.get("updated", date_created.isoformat()))
+    date_created = isoparse(note_raw.get("created") or now.isoformat())
+    date_updated = isoparse(note_raw.get("updated") or date_created.isoformat())
 
     return EvernoteNote(
-        title=note_raw.get("title", "Untitled"),
+        title=note_raw.get("title") or "Untitled",
         created=date_created,
         updated=date_updated,
-        content=note_raw.get("content", ""),
+        content=note_raw.get("content") or "",
         tags=note_tags,
-        author=note_attrs.get("author", ""),
-        url=note_attrs.get("source-url", ""),
+        author=note_raw["note-attributes"].get("author") or "",
+        url=note_raw["note-attributes"].get("source-url") or "",
         is_webclip=_is_webclip(note_raw),
         resources=_parse_resources(note_raw),
     )
@@ -102,6 +78,9 @@ def _is_webclip(note_raw: dict):
     if "webclipper" in note_attrs.get("source-application", ""):
         return True
 
+    if not note_raw.get("content"):
+        return False
+
     return bool(
         re.search(
             '<div[^>]+style="[^"]+en-clipped-content[^"]*"', note_raw.get("content", "")
@@ -115,15 +94,25 @@ def _convert_resource(resource_raw):
         res_attr = {}
 
     file_name = res_attr.get("file-name")
+    file_mime = resource_raw.get("mime", "application/octet-stream")
 
     if not file_name:
-        ext = mimetypes.guess_extension(resource_raw["mime"]) or ".bin"
+        ext = mimetypes.guess_extension(file_mime) or ".bin"
         file_name = f"{uuid.uuid4()}{ext}"
     elif "." not in file_name:
-        ext = mimetypes.guess_extension(resource_raw["mime"]) or ".bin"
+        ext = mimetypes.guess_extension(file_mime) or ".bin"
         file_name = f"{file_name}{ext}"
 
-    if resource_raw["data"].get("#text"):
+    if _is_banned_extension(file_name):
+        logger.warning(
+            f"'{file_name}' attachment extension is banned,"
+            f" will be uploaded as '{file_name}.bin'"
+        )
+
+        file_name = f"{file_name}.bin"
+        file_mime = "application/octet-stream"
+
+    if resource_raw.get("data", {}).get("#text"):
         data_bin = base64.b64decode(resource_raw["data"]["#text"])
     else:
         logger.debug("Empty resource")
@@ -134,6 +123,25 @@ def _convert_resource(resource_raw):
         data_bin=data_bin,
         size=len(data_bin),
         md5=data_md5,
-        mime=resource_raw["mime"],
+        mime=file_mime,
         file_name=file_name,
     )
+
+
+def _is_banned_extension(filename):
+    file_ext = filename.split(".")[-1].lower()
+    return file_ext in {
+        "apk",
+        "app",
+        "com",
+        "ear",
+        "elf",
+        "exe",
+        "ipa",
+        "jar",
+        "js",
+        "xap",
+        "xbe",
+        "xex",
+        "xpi",
+    }

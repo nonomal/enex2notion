@@ -1,70 +1,49 @@
 import logging
 
 from notion.block import CollectionViewPageBlock, PageBlock
-from notion.client import NotionClient
 from notion.collection import CollectionRowBlock
 from notion.operations import build_operation
-from progress.bar import Bar
-from requests import HTTPError, codes
+from requests import RequestException
+from tqdm import tqdm
 
 from enex2notion.enex_types import EvernoteNote
-from enex2notion.note_uploader import upload_block
+from enex2notion.enex_uploader_block import upload_block
+from enex2notion.utils_exceptions import NoteUploadFailException
 
 logger = logging.getLogger(__name__)
 
-
-class NoteUploadFailException(Exception):
-    """Exception for when a note fails to upload"""
+PROGRESS_BAR_WIDTH = 80
 
 
-class BadTokenException(Exception):
-    """Exception for when a token is invalid"""
-
-
-def get_notion_client(token):
+def upload_note(root, note: EvernoteNote, note_blocks, keep_failed):
     try:
-        return NotionClient(token_v2=token)
-    except HTTPError as e:  # pragma: no cover
-        if e.response.status_code == codes["unauthorized"]:
-            raise BadTokenException
-        raise
+        _upload_note(root, note, note_blocks, keep_failed)
+    except Exception as e:
+        raise NoteUploadFailException from e
 
 
-def get_import_root(client, title):
-    try:
-        top_pages = client.get_top_level_pages()
-    except KeyError:  # pragma: no cover
-        # Need empty account to test
-        top_pages = []
-
-    for page in top_pages:
-        if isinstance(page, PageBlock) and page.title == title:
-            logger.info(f"'{title}' page found")
-            return page
-
-    logger.info(f"Creating '{title}' page...")
-    return client.current_space.add_page(title)
-
-
-def upload_note(root, note: EvernoteNote, note_blocks):
-    logger.info(f"Creating new page for note '{note.title}'")
+def _upload_note(root, note: EvernoteNote, note_blocks, keep_failed):
+    logger.debug(f"Creating new page for note '{note.title}'")
     new_page = _make_page(note, root)
 
-    # Escape % to prevent progress bar crashing
-    note_title = note.title.replace("%", "%%")
+    progress_iter = tqdm(
+        iterable=note_blocks, unit="block", leave=False, ncols=PROGRESS_BAR_WIDTH
+    )
 
     try:
-        for block in Bar(f"Uploading '{note_title}'").iter(note_blocks):
+        for block in progress_iter:
             upload_block(new_page, block)
-    except HTTPError:
-        if isinstance(new_page, CollectionRowBlock):
-            new_page.remove()
-        else:
-            new_page.remove(permanently=True)
-        raise NoteUploadFailException
+    except RequestException:
+        if not keep_failed:
+            if isinstance(new_page, CollectionRowBlock):
+                new_page.remove()
+            else:
+                new_page.remove(permanently=True)
+
+        raise
 
     # Set proper name after everything is uploaded
-    new_page.title = note.title
+    new_page.title_plaintext = note.title
 
     _update_edit_time(new_page, note.updated)
 
@@ -92,5 +71,5 @@ def _make_page(note, root):
             created=note.created,
         )
         if isinstance(root, CollectionViewPageBlock)
-        else root.children.add_new(PageBlock, title=tmp_name)
+        else root.children.add_new(PageBlock, title_plaintext=tmp_name)
     )

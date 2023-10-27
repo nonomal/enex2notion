@@ -6,23 +6,23 @@ import pytest
 from dateutil.tz import tzutc
 
 from enex2notion.enex_types import EvernoteNote, EvernoteResource
-from enex2notion.note_parser import parse_note
-from enex2notion.note_parser_blocks import parse_note_blocks
-from enex2notion.notion_blocks import NotionBookmarkBlock, NotionDividerBlock
-from enex2notion.notion_blocks_container import NotionCalloutBlock, NotionCodeBlock
-from enex2notion.notion_blocks_embeddable import NotionImageEmbedBlock
-from enex2notion.notion_blocks_header import (
+from enex2notion.note_parser.blocks import parse_note_blocks
+from enex2notion.note_parser.note import parse_note
+from enex2notion.notion_blocks.container import NotionCalloutBlock, NotionCodeBlock
+from enex2notion.notion_blocks.embeddable import NotionImageEmbedBlock
+from enex2notion.notion_blocks.header import (
     NotionHeaderBlock,
     NotionSubheaderBlock,
     NotionSubsubheaderBlock,
 )
-from enex2notion.notion_blocks_list import (
+from enex2notion.notion_blocks.list import (
     NotionBulletedListBlock,
     NotionNumberedListBlock,
     NotionTodoBlock,
 )
-from enex2notion.notion_blocks_text import NotionTextBlock, TextProp
-from enex2notion.notion_blocks_uploadable import (
+from enex2notion.notion_blocks.minor import NotionBookmarkBlock, NotionDividerBlock
+from enex2notion.notion_blocks.text import NotionTextBlock, TextProp
+from enex2notion.notion_blocks.uploadable import (
     NotionAudioBlock,
     NotionFileBlock,
     NotionImageBlock,
@@ -349,6 +349,21 @@ def test_embedded_inline_svg_no_size(parse_html, smallest_svg):
     )
 
 
+def test_embedded_inline_bad(parse_html, smallest_svg, caplog):
+    test_note = parse_html(
+        f"<img "
+        'src="data:image/svg+xml;utf8,'
+        "<svg xmlns='http://www.w3.org/2000/svg' width='416' height='377'>"
+        '</svg/>" />'
+    )
+
+    with caplog.at_level(logging.WARNING, logger="enex2notion"):
+        result_block = parse_note_blocks(test_note)
+
+    assert result_block == []
+    assert "Failed to parse image" in caplog.text
+
+
 def test_embedded_inline_img_url(parse_html):
     test_note = parse_html('<img src="https://google.com/image.jpg" />')
 
@@ -639,7 +654,80 @@ def test_linebreaks_inside_root(parse_html):
     ]
 
 
-def test_resource_recursive(smallest_gif):
+def test_empty_content(parse_rules):
+    test_note = EvernoteNote(
+        title="test1",
+        created=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
+        updated=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
+        content="",
+        tags=[],
+        author="",
+        url="",
+        is_webclip=False,
+        resources=[],
+    )
+
+    assert parse_note(test_note, parse_rules) == []
+
+
+def test_empty_note(parse_rules):
+    test_note = EvernoteNote(
+        title="test1",
+        created=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
+        updated=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
+        content="<en-note></en-note>",
+        tags=[],
+        author="",
+        url="",
+        is_webclip=False,
+        resources=[],
+    )
+
+    assert parse_note(test_note, parse_rules) == []
+
+
+def test_yinxiang_markdown(parse_rules):
+    test_note = EvernoteNote(
+        title="test1",
+        created=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
+        updated=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
+        content=(
+            "<en-note>"
+            "<div>test1</div>"
+            "<center style='display:none'>test2</center>"
+            "</en-note>"
+        ),
+        tags=[],
+        author="",
+        url="",
+        is_webclip=False,
+        resources=[],
+    )
+
+    assert parse_note(test_note, parse_rules) == [
+        NotionTextBlock(text_prop=TextProp("test1")),
+    ]
+
+
+def test_yinxiang_markdown_bad_end(parse_rules):
+    test_note = EvernoteNote(
+        title="test1",
+        created=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
+        updated=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
+        content=("<en-note><div>test1</div>\n</en-note>"),
+        tags=[],
+        author="",
+        url="",
+        is_webclip=False,
+        resources=[],
+    )
+
+    assert parse_note(test_note, parse_rules) == [
+        NotionTextBlock(text_prop=TextProp("test1")),
+    ]
+
+
+def test_resource_recursive(smallest_gif, parse_rules):
     test_note = EvernoteNote(
         title="test1",
         created=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
@@ -658,14 +746,40 @@ def test_resource_recursive(smallest_gif):
         resources=[smallest_gif],
     )
 
-    test_embedded_image = parse_note(test_note)[0].children[0]
+    test_embedded_image = parse_note(test_note, parse_rules)[0].children[0]
 
     assert test_embedded_image == NotionImageBlock(
         md5_hash=smallest_gif.md5, resource=smallest_gif
     )
 
 
-def test_bad_resource(caplog):
+def test_resource_hash_case(smallest_gif, parse_rules):
+    test_note = EvernoteNote(
+        title="test1",
+        created=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
+        updated=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
+        content=(
+            "<en-note>"
+            "<ul><li>"
+            f'<en-media type="{smallest_gif.mime}" hash="{smallest_gif.md5.upper()}" />'
+            "</li></ul>"
+            "</en-note>"
+        ),
+        tags=[],
+        author="",
+        url="",
+        is_webclip=False,
+        resources=[smallest_gif],
+    )
+
+    test_embedded_image = parse_note(test_note, parse_rules)[0].children[0]
+
+    assert test_embedded_image == NotionImageBlock(
+        md5_hash=smallest_gif.md5, resource=smallest_gif
+    )
+
+
+def test_bad_resource(caplog, parse_rules):
     test_note = EvernoteNote(
         title="test1",
         created=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
@@ -679,37 +793,13 @@ def test_bad_resource(caplog):
     )
 
     with caplog.at_level(logging.DEBUG, logger="enex2notion"):
-        result_blocks = parse_note(test_note)
+        result_blocks = parse_note(test_note, parse_rules)
 
     assert "Failed to resolve resource" in caplog.text
     assert result_blocks == []
 
 
-def test_bad_resource_extension(caplog, tiny_exe_file):
-    test_note = EvernoteNote(
-        title="test1",
-        created=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
-        updated=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
-        content=(
-            f"<en-note>"
-            f'<en-media type="{tiny_exe_file.mime}" hash="{tiny_exe_file.md5}" />'
-            f"</en-note>"
-        ),
-        tags=[],
-        author="",
-        url="",
-        is_webclip=False,
-        resources=[tiny_exe_file],
-    )
-
-    with caplog.at_level(logging.WARNING, logger="enex2notion"):
-        result_blocks = parse_note(test_note)
-
-    assert "this file extensions is banned by Notion" in caplog.text
-    assert result_blocks == []
-
-
-def test_bad_note(caplog):
+def test_bad_note(caplog, parse_rules):
     test_note = EvernoteNote(
         title="test1",
         created=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
@@ -723,13 +813,13 @@ def test_bad_note(caplog):
     )
 
     with caplog.at_level(logging.ERROR, logger="enex2notion"):
-        result_blocks = parse_note(test_note)
+        result_blocks = parse_note(test_note, parse_rules)
 
     assert "Failed to extract" in caplog.text
     assert result_blocks == []
 
 
-def test_note_with_meta():
+def test_note_with_meta(parse_rules):
     test_note = EvernoteNote(
         title="test1",
         created=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
@@ -749,7 +839,9 @@ def test_note_with_meta():
         "Tags: tag1, tag2"
     )
 
-    fake_note_blocks = parse_note(test_note, is_add_meta=True)
+    parse_rules.add_meta = True
+
+    fake_note_blocks = parse_note(test_note, parse_rules)
 
     assert fake_note_blocks == [
         NotionCalloutBlock(
@@ -760,7 +852,7 @@ def test_note_with_meta():
     ]
 
 
-def test_note_webclip():
+def test_note_webclip(parse_rules):
     test_note = EvernoteNote(
         title="test1",
         created=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
@@ -773,14 +865,14 @@ def test_note_webclip():
         resources=[],
     )
 
-    fake_note_blocks = parse_note(test_note)
+    fake_note_blocks = parse_note(test_note, parse_rules)
 
     assert fake_note_blocks == [
         NotionTextBlock(text_prop=TextProp("test")),
     ]
 
 
-def test_condense_lines_empty_divide():
+def test_condense_lines_empty_divide(parse_rules):
     test_note = EvernoteNote(
         title="test1",
         created=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
@@ -801,7 +893,9 @@ def test_condense_lines_empty_divide():
         resources=[],
     )
 
-    fake_note_blocks = parse_note(test_note, is_condense_lines=True)
+    parse_rules.condense_lines = True
+
+    fake_note_blocks = parse_note(test_note, parse_rules)
 
     assert fake_note_blocks == [
         NotionTextBlock(
@@ -817,7 +911,7 @@ def test_condense_lines_empty_divide():
     ]
 
 
-def test_condense_lines_trailing_divide():
+def test_condense_lines_trailing_divide(parse_rules):
     test_note = EvernoteNote(
         title="test1",
         created=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
@@ -840,7 +934,9 @@ def test_condense_lines_trailing_divide():
         resources=[],
     )
 
-    fake_note_blocks = parse_note(test_note, is_condense_lines=True)
+    parse_rules.condense_lines = True
+
+    fake_note_blocks = parse_note(test_note, parse_rules)
 
     assert fake_note_blocks == [
         NotionTextBlock(
@@ -856,7 +952,7 @@ def test_condense_lines_trailing_divide():
     ]
 
 
-def test_condense_lines_sparse():
+def test_condense_lines_sparse(parse_rules):
     test_note = EvernoteNote(
         title="test1",
         created=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
@@ -879,7 +975,9 @@ def test_condense_lines_sparse():
         resources=[],
     )
 
-    fake_note_blocks = parse_note(test_note, is_condense_lines_sparse=True)
+    parse_rules.condense_lines_sparse = True
+
+    fake_note_blocks = parse_note(test_note, parse_rules)
 
     assert fake_note_blocks == [
         NotionTextBlock(
@@ -896,7 +994,7 @@ def test_condense_lines_sparse():
     ]
 
 
-def test_condense_lines_non_text_block():
+def test_condense_lines_non_text_block(parse_rules):
     test_note = EvernoteNote(
         title="test1",
         created=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
@@ -917,7 +1015,9 @@ def test_condense_lines_non_text_block():
         resources=[],
     )
 
-    fake_note_blocks = parse_note(test_note, is_condense_lines=True)
+    parse_rules.condense_lines = True
+
+    fake_note_blocks = parse_note(test_note, parse_rules)
 
     assert fake_note_blocks == [
         NotionTextBlock(
@@ -934,7 +1034,7 @@ def test_condense_lines_non_text_block():
     ]
 
 
-def test_condense_lines_children():
+def test_condense_lines_children(parse_rules):
     test_note = EvernoteNote(
         title="test1",
         created=datetime(2021, 11, 18, 0, 0, 0, tzinfo=tzutc()),
@@ -956,7 +1056,9 @@ def test_condense_lines_children():
         resources=[],
     )
 
-    fake_note_blocks = parse_note(test_note, is_condense_lines=True)
+    parse_rules.condense_lines = True
+
+    fake_note_blocks = parse_note(test_note, parse_rules)
 
     expected_note_blocks = [
         NotionTextBlock(

@@ -32,21 +32,46 @@ You can either use Evernote native export or try out my other tool, [evernote-ba
 
 ## Installation
 
+If you are not familiar with command line programs, take a look at these step-by-step guides:
+
+### [Step-by-step guide for Windows](https://vzhd1701.notion.site/How-to-use-enex2notion-on-Windows-6fa980b489ab4414a5317e631e7f6bc6)
+
+### [Step-by-step guide for macOS](https://vzhd1701.notion.site/How-to-use-enex2notion-on-macOS-a912dd63e3d14da886a413d3f83efb67)
+
+### Using portable binary
+
 [**Download the latest binary release**](https://github.com/vzhd1701/enex2notion/releases/latest) for your OS.
 
-### With PIP
+### With [Homebrew](https://brew.sh/) (Recommended for macOS)
 
 ```bash
-$ pip install enex2notion
+$ brew install enex2notion
 ```
 
-**Python 3.7 or later required.**
-
-Or, since **enex2notion** is a standalone tool, it might be more convenient to install it using [**pipx**](https://github.com/pipxproject/pipx):
+### With [**PIPX**](https://github.com/pipxproject/pipx) (Recommended for Linux & Windows)
 
 ```shell
 $ pipx install enex2notion
 ```
+
+### With [**Docker**](https://docs.docker.com/)
+
+[![Docker Image Size (amd64)](<https://img.shields.io/docker/image-size/vzhd1701/enex2notion?arch=amd64&label=image%20size%20(amd64)>)](https://hub.docker.com/r/vzhd1701/enex2notion)
+[![Docker Image Size (arm64)](<https://img.shields.io/docker/image-size/vzhd1701/enex2notion?arch=arm64&label=image%20size%20(arm64)>)](https://hub.docker.com/r/vzhd1701/enex2notion)
+
+This command maps current directory `$PWD` to the `/input` directory in the container. You can replace `$PWD` with a directory that contains your `*.enex` files. When running commands like `enex2notion /input` refer to your local mapped directory as `/input`.
+
+```shell
+$ docker run --rm -t -v "$PWD":/input vzhd1701/enex2notion:latest
+```
+
+### With PIP
+
+```bash
+$ pip install --user enex2notion
+```
+
+**Python 3.8 or later required.**
 
 ### From source
 
@@ -55,7 +80,7 @@ This project uses [poetry](https://python-poetry.org/) for dependency management
 ```shell
 $ git clone https://github.com/vzhd1701/enex2notion.git
 $ cd enex2notion/
-$ poetry install --no-dev
+$ poetry install
 $ poetry run enex2notion
 ```
 
@@ -63,32 +88,31 @@ $ poetry run enex2notion
 
 ```shell
 $ enex2notion --help
-usage: enex2notion [-h] [--token TOKEN] [--root-page NAME] [--mode {DB,PAGE}] [--mode-webclips {TXT,PDF}] [--add-pdf-preview] [--add-meta] [--tag TAG] [--condense-lines] [--condense-lines-sparse] [--done-file FILE] [--log FILE]
-                   [--verbose] [--version]
-                   FILE/DIR [FILE/DIR ...]
+usage: enex2notion [-h] [--token TOKEN] [OPTION ...] FILE/DIR [FILE/DIR ...]
 
 Uploads ENEX files to Notion
 
 positional arguments:
-  FILE/DIR              ENEX files or directories to upload
+  FILE/DIR                   ENEX files or directories to upload
 
 optional arguments:
-  -h, --help            show this help message and exit
-  --token TOKEN         Notion token, stored in token_v2 cookie for notion.so [NEEDED FOR UPLOAD]
-  --root-page NAME      root page name for the imported notebooks, it will be created if it does not exist (default: "Evernote ENEX Import")
-  --mode {DB,PAGE}      upload each ENEX as database (DB) or page with children (PAGE) (default: DB)
-  --mode-webclips {TXT,PDF}
-                        convert web clips to text (TXT) or pdf (PDF) before upload (default: TXT)
-  --add-pdf-preview     include preview image with PDF webclips for gallery view thumbnail (works only with --mode-webclips=PDF)
-  --add-meta            include metadata (created, tags, etc) in notes, makes sense only with PAGE mode
-  --tag TAG             add custom tag to uploaded notes
-  --condense-lines      condense text lines together into paragraphs to avoid making block per line
-  --condense-lines-sparse
-                        like --condense-lines but leaves gaps between paragraphs
-  --done-file FILE      file for uploaded notes hashes to resume interrupted upload
-  --log FILE            file to store program log
-  --verbose             output debug information
-  --version             show program's version number and exit
+  -h, --help                 show this help message and exit
+  --token TOKEN              Notion token, stored in token_v2 cookie for notion.so [NEEDED FOR UPLOAD]
+  --root-page NAME           root page name for the imported notebooks, it will be created if it does not exist (default: "Evernote ENEX Import")
+  --mode {DB,PAGE}           upload each ENEX as database (DB) or page with children (PAGE) (default: DB)
+  --mode-webclips {TXT,PDF}  convert web clips to text (TXT) or pdf (PDF) before upload (default: TXT)
+  --retry N                  retry N times on note upload error before giving up, 0 for infinite retries (default: 5)
+  --skip-failed              skip notes that failed to upload (after exhausting --retry attempts), by default the program will crash on upload error
+  --keep-failed              keep partial pages at Notion with '[UNFINISHED UPLOAD]' in title if they fail to upload completely, by default the program will try to delete them on upload fail
+  --add-pdf-preview          include preview image with PDF webclips for gallery view thumbnail (works only with --mode-webclips=PDF)
+  --add-meta                 include metadata (created, tags, etc) in notes, makes sense only with PAGE mode
+  --tag TAG                  add custom tag to uploaded notes
+  --condense-lines           condense text lines together into paragraphs to avoid making block per line
+  --condense-lines-sparse    like --condense-lines but leaves gaps between paragraphs
+  --done-file FILE           file for uploaded notes hashes to resume interrupted upload
+  --log FILE                 file to store program log
+  --verbose                  output debug information
+  --version                  show program's version number and exit
 ```
 
 ### Input
@@ -126,6 +150,10 @@ Due to Notion's limitations Evernote web clips cannot be uploaded as-is. `enex2n
   - web clips are converted using [wkhtmltopdf](https://wkhtmltopdf.org/), see [this page](https://github.com/JazzCore/python-pdfkit/wiki/Installing-wkhtmltopdf) on how to install it
 
 Since Notion's gallery view does not provide thumbnails for embedded PDFs, you have the `--add-pdf-preview` option to extract the first page of generated PDF as a preview for the web clip page.
+
+### Banned file extensions
+
+Notion prohibits uploading files with certain extensions. The list consists of extensions for executable binaries, supposedly to prevent spreading malware. `enex2notion` will automatically add a `bin` extension to those files to circumvent this limitation. List of banned extensions: `apk`, `app`, `com`, `ear`, `elf`, `exe`, `ipa`, `jar`, `js`, `xap`, `xbe`, `xex`, `xpi`.
 
 ### Misc
 
